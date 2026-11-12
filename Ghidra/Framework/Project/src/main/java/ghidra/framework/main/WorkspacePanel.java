@@ -18,12 +18,14 @@ package ghidra.framework.main;
 import java.awt.*;
 import java.awt.event.ItemEvent;
 import java.beans.PropertyChangeEvent;
+import java.io.Serial;
 import java.util.HashMap;
 
 import javax.swing.*;
 import javax.swing.border.Border;
 
 import docking.widgets.combobox.GComboBox;
+import docking.DockingChrome;
 import docking.widgets.dialogs.InputDialog;
 import ghidra.framework.model.*;
 import ghidra.framework.plugintool.PluginTool;
@@ -34,13 +36,14 @@ import help.Help;
 import help.HelpService;
 
 class WorkspacePanel extends JPanel implements WorkspaceChangeListener {
+	@Serial
 	private final static long serialVersionUID = 1L;
 	private final static String RUNNING_TOOLS_TITLE = "Running Tools";
 	private final static Border ACTIVE_WORKSPACE_BORDER =
-		BorderFactory.createTitledBorder(RUNNING_TOOLS_TITLE);
+		DockingChrome.sectionBorder(RUNNING_TOOLS_TITLE);
 	private final static String NO_ACTIVE_WORKSPACE = "INACTIVE";
 	private final static Border INACTIVE_BORDER =
-		BorderFactory.createTitledBorder(RUNNING_TOOLS_TITLE + ": " + NO_ACTIVE_WORKSPACE);
+		DockingChrome.sectionBorder(RUNNING_TOOLS_TITLE + ": " + NO_ACTIVE_WORKSPACE);
 
 	final static int TYPICAL_NUM_RUNNING_TOOLS = 3;
 

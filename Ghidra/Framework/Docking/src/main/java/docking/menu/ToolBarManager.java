@@ -15,12 +15,17 @@
  */
 package docking.menu;
 
+import java.awt.Component;
+import java.awt.Graphics;
+import java.awt.Insets;
 import java.util.*;
 import java.util.Map.Entry;
 
 import javax.swing.*;
 
 import docking.DockingUtils;
+import docking.DockingChrome;
+import docking.GenericHeader;
 import docking.DockingWindowManager;
 import docking.action.DockingActionIf;
 import docking.action.ToolBarData;
@@ -114,8 +119,42 @@ public class ToolBarManager {
 	}
 
 	private JComponent buildToolbar() {
-		JComponent newToolBar = new VariableHeightPanel(true, 0, 0);
-		newToolBar.setBorder(BorderFactory.createEmptyBorder(0, 5, 0, 0));
+		JComponent newToolBar = new VariableHeightPanel(true, 0, 0) {
+			@Override
+			public boolean isOpaque() {
+				return !DockingChrome.isModern() && super.isOpaque();
+			}
+
+			@Override
+			protected void paintComponent(Graphics g) {
+				super.paintComponent(g);
+				if (DockingChrome.isModern() &&
+					SwingUtilities.getAncestorOfClass(GenericHeader.class, this) == null) {
+					DockingChrome.paintSurface(g, getWidth(), getHeight(),
+						UIManager.getColor("Button.background"), getBackground());
+				}
+			}
+		};
+		newToolBar.setBorder(new javax.swing.border.AbstractBorder() {
+			@Override
+			public Insets getBorderInsets(Component c, Insets insets) {
+				if (DockingChrome.isModern()) {
+					insets.set(3, 6, 3, 6);
+				}
+				else {
+					insets.set(0, 5, 0, 0);
+				}
+				return insets;
+			}
+
+			@Override
+			public void paintBorder(Component c, Graphics g, int x, int y, int w, int h) {
+				if (DockingChrome.isModern()) {
+					g.setColor(DockingChrome.frameColor());
+					g.drawLine(x, y + h - 1, x + w - 1, y + h - 1);
+				}
+			}
+		});
 
 		boolean isFirstGroup = true;
 		Set<Entry<String, List<ToolBarItemManager>>> entrySet = groupToItemsMap.entrySet();
@@ -184,7 +223,7 @@ public class ToolBarManager {
 // Inner Classes
 //==================================================================================================
 
-	private class GroupComparator implements Comparator<String> {
+	private static class GroupComparator implements Comparator<String> {
 
 		@Override
 		public int compare(String group1, String group2) {
@@ -201,7 +240,7 @@ public class ToolBarManager {
 		}
 	}
 
-	private class ToolBarItemManagerComparator implements Comparator<ToolBarItemManager> {
+	private static class ToolBarItemManagerComparator implements Comparator<ToolBarItemManager> {
 
 		@Override
 		public int compare(ToolBarItemManager t1, ToolBarItemManager t2) {

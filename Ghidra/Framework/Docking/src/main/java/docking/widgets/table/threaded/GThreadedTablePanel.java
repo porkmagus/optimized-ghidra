@@ -20,6 +20,7 @@ import java.awt.FlowLayout;
 
 import javax.swing.*;
 
+import docking.widgets.ViewStatusPanel;
 import docking.widgets.EmptyBorderButton;
 import docking.widgets.label.GLabel;
 import docking.widgets.table.GTable;
@@ -42,9 +43,11 @@ public class GThreadedTablePanel<T> extends JPanel {
 	private static final int MIN_INCREMENTAL_UPDATE_DELAY = 250;
 	private static final int MAX_INCREMENTAL_UPDATE_DELAY = 2000;
 
-	private GTable table;
+	private final GTable table;
 	private ThreadedTableModel<T, ?> threadedModel;
-	private ThreadedTableModelListener tableListener;
+	private final ViewStatusPanel statusPanel;
+	private boolean statusGuidanceEnabled = true;
+	private boolean loadCancelled;
 
 	private MessagePassingTaskMonitor defaultMonitor;
 	private IncrementalLoadingTaskMonitor incrementalMonitor;
@@ -58,11 +61,11 @@ public class GThreadedTablePanel<T> extends JPanel {
 	private EmptyBorderButton refreshButton;
 
 	private Timer showTimer;
-	private Runnable showProgressRunnable = () -> startShowProgressTimer();
+	private final Runnable showProgressRunnable = this::startShowProgressTimer;
 
-	private Runnable showPendingRunnable = () -> doShowPendingPanel();
+	private final Runnable showPendingRunnable = this::doShowPendingPanel;
 
-	private Runnable updateCompleteRunnable = () -> doUpdateComplete();
+	private final Runnable updateCompleteRunnable = this::doUpdateComplete;
 
 	private final int minUpdateDelay;
 	private final int maxUpdateDelay;
@@ -103,7 +106,46 @@ public class GThreadedTablePanel<T> extends JPanel {
 
 		table = createTable(model);
 		initializeModel(model);
-		add(new JScrollPane(table), BorderLayout.CENTER);
+		statusPanel = new ViewStatusPanel(new JScrollPane(table));
+		add(statusPanel, BorderLayout.CENTER);
+		model.addTableModelListener(_ -> updateStatus());
+	}
+
+	/**
+	 * Enables or disables the built-in loading/empty guidance. Clients that provide their own
+	 * guidance (for example, one that knows about search state) should disable it.
+	 *
+	 * @param enabled true to show built-in guidance (the default)
+	 */
+	public void setStatusGuidanceEnabled(boolean enabled) {
+		statusGuidanceEnabled = enabled;
+		updateStatus();
+	}
+
+	private void updateStatus() {
+		if (!statusGuidanceEnabled || statusPanel == null) {
+			if (statusPanel != null) {
+				statusPanel.setStatus(null, null);
+			}
+			return;
+		}
+		if (threadedModel.getRowCount() > 0) {
+			statusPanel.setStatus(null, null);
+		}
+		else if (threadedModel.isBusy()) {
+			statusPanel.setStatus("Loading…", "Results will appear when loading finishes.");
+		}
+		else if (loadCancelled) {
+			statusPanel.setStatus("Loading cancelled",
+				"Refresh the table to load its contents again.");
+		}
+		else if (threadedModel.getUnfilteredRowCount() > 0) {
+			statusPanel.setStatus("No rows pass this filter",
+				"Change or clear the filter to see the hidden rows.");
+		}
+		else {
+			statusPanel.setStatus("Nothing to show", "This table has no rows right now.");
+		}
 	}
 
 	protected GTable createTable(ThreadedTableModel<T, ?> model) {
@@ -123,8 +165,7 @@ public class GThreadedTablePanel<T> extends JPanel {
 			loadingProgressMonitor = defaultMonitor;
 		}
 
-		tableListener = new TableListener();
-		model.addThreadedTableModelListener(tableListener);
+		model.addThreadedTableModelListener(new TableListener());
 
 		model.setDefaultTaskMonitor(defaultMonitor);
 		model.setUpdateDelay(minUpdateDelay, maxUpdateDelay);
@@ -154,7 +195,7 @@ public class GThreadedTablePanel<T> extends JPanel {
 
 	private void buildPending() {
 		refreshButton = new EmptyBorderButton(Icons.REFRESH_ICON);
-		refreshButton.addActionListener(e -> threadedModel.reload());
+		refreshButton.addActionListener(_ -> threadedModel.reload());
 		refreshButton.setToolTipText("Force Refresh Now");
 		pendingPanel = new JPanel(new FlowLayout());
 		pendingPanel.setName("Pending Panel");
@@ -193,7 +234,7 @@ public class GThreadedTablePanel<T> extends JPanel {
 	}
 
 	private void startShowProgressTimer() {
-		showTimer = new Timer(SHOW_PROGRESS_DEFAULT, ev -> {
+		showTimer = new Timer(SHOW_PROGRESS_DEFAULT, _ -> {
 			if (isBusy()) {
 				showTimer = null;
 				doShowProgressPanel();
@@ -216,27 +257,19 @@ public class GThreadedTablePanel<T> extends JPanel {
 	}
 
 	private void doShowLoadingProgressPanel() {
-		if (loadedComponent != null) {
-			remove(loadedComponent);
-			loadedComponent = null;
-		}
-
-		loadedComponent = loadingProgressMonitor;
-		add(loadedComponent, BorderLayout.SOUTH);
-		loadedComponent.invalidate();
-
-		table.invalidate();
-		validate();
-		repaint();
+		showMonitorComponent(loadingProgressMonitor);
 	}
 
 	private void doShowNonLoadingProgressPanel() {
+		showMonitorComponent(defaultMonitor);
+	}
+
+	private void showMonitorComponent(JComponent monitorComponent) {
 		if (loadedComponent != null) {
 			remove(loadedComponent);
-			loadedComponent = null;
 		}
 
-		loadedComponent = defaultMonitor;
+		loadedComponent = monitorComponent;
 		add(loadedComponent, BorderLayout.SOUTH);
 		loadedComponent.invalidate();
 
@@ -287,7 +320,7 @@ public class GThreadedTablePanel<T> extends JPanel {
 	 * {@link IncrementalLoadingTaskMonitor}, but would like messages to this monitor to appear
 	 * in the GUI.
 	 */
-	private class MessagePassingTaskMonitor extends TaskMonitorComponent {
+	private static class MessagePassingTaskMonitor extends TaskMonitorComponent {
 		private TaskMonitorComponent messageRecepientMonitor;
 
 		public MessagePassingTaskMonitor() {
@@ -312,7 +345,7 @@ public class GThreadedTablePanel<T> extends JPanel {
 	 * This task monitor is shown in the GUI when the given threaded model of this class is
 	 * loading incrementally (see {@link ThreadedTableModel#isLoadIncrementally()}.
 	 */
-	private class IncrementalLoadingTaskMonitor extends TaskMonitorComponent {
+	private static class IncrementalLoadingTaskMonitor extends TaskMonitorComponent {
 
 		private final TaskMonitorComponent defaultMonitorComponent;
 
@@ -339,16 +372,21 @@ public class GThreadedTablePanel<T> extends JPanel {
 		@Override
 		public void loadPending() {
 			handleUpdatePending();
+			updateStatus();
 		}
 
 		@Override
 		public void loadingStarted() {
+			loadCancelled = false;
 			handleUpdating();
+			updateStatus();
 		}
 
 		@Override
 		public void loadingFinished(boolean wasCancelled) {
+			loadCancelled = wasCancelled;
 			handleUpdateComplete();
+			updateStatus();
 		}
 	}
 

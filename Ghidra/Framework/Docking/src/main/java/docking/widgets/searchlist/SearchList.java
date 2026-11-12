@@ -15,20 +15,26 @@
  */
 package docking.widgets.searchlist;
 
-import java.awt.*;
-import java.awt.event.*;
-import java.util.List;
-import java.util.function.*;
+import docking.DockingChrome;
+import docking.event.mouse.GMouseListenerAdapter;
+import docking.widgets.ViewStatusPanel;
+import docking.widgets.list.GListCellRenderer;
+import generic.theme.GThemeDefaults.Colors.Messages;
+import utility.function.Dummy;
 
-import javax.accessibility.AccessibleContext;
 import javax.swing.*;
 import javax.swing.border.Border;
-import javax.swing.event.*;
-
-import docking.event.mouse.GMouseListenerAdapter;
-import docking.widgets.list.GListCellRenderer;
-import ghidra.util.Msg;
-import utility.function.Dummy;
+import javax.swing.event.DocumentEvent;
+import javax.swing.event.DocumentListener;
+import javax.swing.event.ListDataEvent;
+import javax.swing.event.ListDataListener;
+import java.awt.*;
+import java.awt.event.KeyAdapter;
+import java.awt.event.KeyEvent;
+import java.awt.event.MouseEvent;
+import java.awt.event.MouseMotionAdapter;
+import java.util.List;
+import java.util.function.*;
 
 /**
  * Component for displaying and selecting from a filterable list of items that are grouped into
@@ -37,17 +43,18 @@ import utility.function.Dummy;
  * @param <T> the type of items in the list
  */
 public class SearchList<T> extends JPanel {
-	private SearchListModel<T> model;
+	private final SearchListModel<T> model;
 	private JList<SearchListEntry<T>> jList;
 	private int categoryWidth;
 	private JTextField textField;
-	private BiConsumer<T, String> chosenItemCallback;
+	private final BiConsumer<T, String> chosenItemCallback;
 	private Consumer<T> selectedConsumer = Dummy.consumer();
 	private ListCellRenderer<SearchListEntry<T>> itemRenderer = new DefaultItemRenderer();
 	private String currentFilterText;
+	private ViewStatusPanel resultStatus;
 	private boolean showCategories = true;
 	private boolean singleClickMode = false;
-	private BiFunction<T, String, String> displayNameFunction = (t, c) -> t.toString();
+	private BiFunction<T, String, String> displayNameFunction = (t, ignoredC) -> t.toString();
 
 	/**
 	 * Construct a new SearchList given a model and an chosen item callback.
@@ -185,7 +192,7 @@ public class SearchList<T> extends JPanel {
 	private Component buildList() {
 		JPanel panel = new JPanel(new BorderLayout());
 		panel.setBorder(BorderFactory.createEmptyBorder(2, 0, 0, 0));
-		jList = new JList<SearchListEntry<T>>(model);
+		jList = new JList<>(model);
 		JScrollPane jScrollPane = new JScrollPane(jList);
 		jScrollPane.setHorizontalScrollBarPolicy(ScrollPaneConstants.HORIZONTAL_SCROLLBAR_NEVER);
 		jList.setCellRenderer(new SearchListRenderer());
@@ -214,7 +221,8 @@ public class SearchList<T> extends JPanel {
 				chooseItem();
 			}
 		});
-		panel.add(jScrollPane, BorderLayout.CENTER);
+		resultStatus = new ViewStatusPanel(jScrollPane);
+		panel.add(resultStatus, BorderLayout.CENTER);
 		return panel;
 	}
 
@@ -229,6 +237,7 @@ public class SearchList<T> extends JPanel {
 		return panel;
 	}
 
+	@SuppressWarnings("unused") // Retained extension/test API.
 	protected void moveListUpDown(boolean isUp) {
 		int index = jList.getSelectedIndex();
 		if (isUp) {
@@ -244,6 +253,13 @@ public class SearchList<T> extends JPanel {
 	private void modelChanged() {
 		categoryWidth = computeCategoryWidth();
 		setInitialSelection();
+		if (resultStatus != null) {
+			boolean filtered = currentFilterText != null && !currentFilterText.isBlank();
+			resultStatus.setStatus(model.getSize() == 0 ?
+				(filtered ? "No matching results" : "No available items") : null,
+				filtered ? "Change or clear the search to see more results." :
+					"Available items will appear here.");
+		}
 	}
 
 	private int computeCategoryWidth() {
@@ -268,6 +284,7 @@ public class SearchList<T> extends JPanel {
 		String newFilterText = textField.getText().trim();
 		if (!newFilterText.equals(currentFilterText)) {
 			currentFilterText = newFilterText;
+			model.setRanking(currentFilterText.isEmpty() ? null : createRanking(currentFilterText));
 			model.setFilter(createFilter(currentFilterText));
 		}
 	}
@@ -276,16 +293,27 @@ public class SearchList<T> extends JPanel {
 		return new DefaultFilter(text);
 	}
 
+	/**
+	 * Creates an optional ranking for the given filter text; lower scores are listed first within
+	 * a category. The default is no ranking (original order).
+	 *
+	 * @param text the filter text
+	 * @return the ranking function, or null
+	 */
+	protected ToIntBiFunction<T, String> createRanking(String text) {
+		return null;
+	}
+
 	public JTextField getTextField() {
 		return textField;
 	}
 
 	private class SearchListRenderer implements ListCellRenderer<SearchListEntry<T>> {
-		private JPanel panel;
-		private JLabel categoryLabel;
-		private Border normalBorder;
-		private Border lastEntryBorder;
-		private JSeparator jSeparator;
+		private final JPanel panel;
+		private final JLabel categoryLabel;
+		private final Border normalBorder;
+		private final Border lastEntryBorder;
+		private final JSeparator jSeparator;
 
 		SearchListRenderer() {
 			categoryLabel = new JLabel();
@@ -328,8 +356,26 @@ public class SearchList<T> extends JPanel {
 			categoryLabel.setOpaque(true);
 			categoryLabel.setBackground(background);
 			categoryLabel.setForeground(itemRendererComp.getForeground());
+			if (DockingChrome.isModern()) {
+				panel.remove(jSeparator);
+				panel.setBorder(BorderFactory.createEmptyBorder(2, 0, 2, 0));
+				categoryLabel.setPreferredSize(null);
+				categoryLabel.setFont(list.getFont().deriveFont(Font.BOLD));
+				categoryLabel.setForeground(Messages.HINT);
+				categoryLabel.setBackground(list.getBackground());
+				categoryLabel.setBorder(BorderFactory.createEmptyBorder(10, 8, 4, 8));
+				panel.remove(categoryLabel);
+				if (showCategories && value.showCategory()) {
+					panel.add(categoryLabel, BorderLayout.NORTH);
+				}
+			}
+			else {
+				categoryLabel.setFont(list.getFont());
+				categoryLabel.setBorder(null);
+			}
 			String txt = getDisplayName(value.value(), value.category());
 			panel.getAccessibleContext().setAccessibleName(txt);
+			panel.getAccessibleContext().setAccessibleDescription(value.category());
 			return panel;
 		}
 	}
@@ -342,8 +388,7 @@ public class SearchList<T> extends JPanel {
 
 			JLabel label =
 				(JLabel) super.getListCellRendererComponent(list, value, index, isSelected, false);
-			SearchListEntry<T> entry = value;
-			T t = entry.value();
+			T t = value.value();
 			label.setText(t.toString());
 
 			return label;
@@ -386,12 +431,9 @@ public class SearchList<T> extends JPanel {
 		@Override
 		public void keyTyped(KeyEvent e) {
 			if (e.getKeyChar() == '\n') {
+				e.consume();
 				chooseItem();
-
-			}
-			int keyCode = e.getKeyChar();
-			if (keyCode == KeyEvent.VK_ENTER) {
-				chooseItem();
+				return;
 			}
 
 			KeyboardFocusManager.getCurrentKeyboardFocusManager().redispatchEvent(textField, e);
@@ -419,7 +461,7 @@ public class SearchList<T> extends JPanel {
 	}
 
 	private class DefaultFilter implements BiPredicate<T, String> {
-		private String filterText;
+		private final String filterText;
 
 		DefaultFilter(String filterText) {
 			this.filterText = filterText.toLowerCase();

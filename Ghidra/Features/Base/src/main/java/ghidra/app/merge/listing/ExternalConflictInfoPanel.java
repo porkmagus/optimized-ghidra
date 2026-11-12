@@ -17,6 +17,7 @@ package ghidra.app.merge.listing;
 
 import java.awt.BorderLayout;
 
+import java.io.Serial;
 import javax.swing.*;
 import javax.swing.border.TitledBorder;
 
@@ -33,6 +34,7 @@ import ghidra.app.merge.util.ConflictUtility;
  */
 public class ExternalConflictInfoPanel extends JPanel {
 
+	@Serial
 	private final static long serialVersionUID = 1;
 	private String conflictType;
 	private int conflictNum;
@@ -64,6 +66,7 @@ public class ExternalConflictInfoPanel extends JPanel {
 	/**
 	 * Returns a string indicating the current phase of the External merge.
 	 */
+	@SuppressWarnings("unused") // retained package API
 	String getConflictType() {
 		return conflictType;
 	}
@@ -80,6 +83,7 @@ public class ExternalConflictInfoPanel extends JPanel {
 	 * @param conflictType the type of conflict being resolved by this phase
 	 * (for example, Symbols).
 	 */
+	@SuppressWarnings("unused") // retained package API
 	void setConflictType(String conflictType) {
 		this.conflictType = conflictType;
 		TitledBorder tBorder = (TitledBorder) getBorder();
@@ -94,8 +98,8 @@ public class ExternalConflictInfoPanel extends JPanel {
 
 	/**
 	 * Updates the externals name info.
-	 * @param externalNum number for the current externals being resolved
-	 * @param totalExternals total number of externals to resolve
+	 * @param versionTitle the title of the program version being shown
+	 * @param labelPathName the external location's label path name
 	 */
 	void setExternalName(String versionTitle, String labelPathName) {
 		this.versionTitle = versionTitle;
@@ -104,11 +108,11 @@ public class ExternalConflictInfoPanel extends JPanel {
 	}
 
 	private void addCount(StringBuffer buf, int value) {
-		buf.append("<font color=\"" + Palette.MAROON + "\">" + value + "</font>");
+		buf.append("<font color=\"").append(Palette.MAROON).append("\">").append(value).append("</font>");
 	}
 
 	private void addName(StringBuffer buf, String name) {
-		buf.append("<font color=\"" + Palette.MAROON + "\">" + name + "</font>");
+		buf.append("<font color=\"").append(Palette.MAROON).append("\">").append(name).append("</font>");
 	}
 
 	private void updateWest() {
