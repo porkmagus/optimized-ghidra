@@ -42,13 +42,16 @@ import docking.widgets.searchlist.DefaultSearchListModel;
  * 
  */
 public class ActionsModel extends DefaultSearchListModel<DockingActionIf> {
-	private Set<DockingActionIf> localActions;
-	private Set<DockingActionIf> globalActions;
+	private final Set<DockingActionIf> localActions;
+	private final Set<DockingActionIf> globalActions;
 	private ActionDisplayLevel displayLevel = ActionDisplayLevel.LOCAL;
 	private ActionContext context;
-	private Comparator<DockingActionIf> nameComparator = new ActionNameComparator();
-	private Comparator<DockingActionIf> menuPathComparator = new ActionMenuPathComparator();
-	private Comparator<DockingActionIf> popupPathComparator = new ActionPopupPathComparator();
+	private final Comparator<DockingActionIf> nameComparator = new ActionNameComparator();
+	private final Comparator<DockingActionIf> menuPathComparator = new ActionMenuPathComparator();
+	private final Comparator<DockingActionIf> popupPathComparator = new ActionPopupPathComparator();
+
+	private static final int MAX_RECENT = 5;
+	private static final LinkedList<String> recentActionKeys = new LinkedList<>();
 
 	ActionsModel(Set<DockingActionIf> localActions, Set<DockingActionIf> globalActions,
 			ActionContext context) {
@@ -88,38 +91,91 @@ public class ActionsModel extends DefaultSearchListModel<DockingActionIf> {
 		return context == null;
 	}
 
+	private static String actionKey(DockingActionIf a) {
+		return a.getOwner() + "::" + a.getName();
+	}
+
+	/**
+	 * Remembers that the given action was chosen so that it can be offered first the next time
+	 * the chooser is shown (modern chrome only).
+	 * @param action the action that was chosen
+	 */
+	public static void recordRecentAction(DockingActionIf action) {
+		synchronized (recentActionKeys) {
+			String key = actionKey(action);
+			recentActionKeys.remove(key);
+			recentActionKeys.addFirst(key);
+			while (recentActionKeys.size() > MAX_RECENT) {
+				recentActionKeys.removeLast();
+			}
+		}
+	}
+
+	/** Clears the remembered recent actions. */
+	public static void clearRecentActions() {
+		synchronized (recentActionKeys) {
+			recentActionKeys.clear();
+		}
+	}
+
+	private void addRecentActions() {
+		if (!DockingChrome.isModern()) {
+			return;
+		}
+		List<String> keys;
+		synchronized (recentActionKeys) {
+			keys = new ArrayList<>(recentActionKeys);
+		}
+		List<DockingActionIf> candidates = new ArrayList<>(localActions);
+		candidates.addAll(globalActions);
+		List<DockingActionIf> recent = new ArrayList<>();
+		for (String key : keys) {
+			for (DockingActionIf a : candidates) {
+				if (actionKey(a).equals(key) && a.isValidContext(context) &&
+					a.isEnabledForContext(context)) {
+					recent.add(a);
+					break;
+				}
+			}
+		}
+		if (!recent.isEmpty()) {
+			add(RECENT.getDisplayName(), recent);
+		}
+	}
+
 	private void populateActions() {
 		clearData();
+		addRecentActions();
 		switch (displayLevel) {
 			case LOCAL:
-				addLocalActions(LOCAL_TOOLBAR, a -> isValidToolbar(a));
-				addLocalActions(LOCAL_MENU, a -> isValidMenu(a));
-				addLocalActions(POPUP, a -> isValidPopup(a));
-				addGlobalActions(POPUP, a -> isValidPopup(a));
-				addLocalActions(KEYBINDING_ONLY, a -> isValidKeybindingOnly(a));
-				addGlobalActions(KEYBINDING_ONLY, a -> isValidKeybindingOnly(a));
+				addLocalActions(LOCAL_TOOLBAR, this::isValidToolbar);
+				addLocalActions(LOCAL_MENU, this::isValidMenu);
+				addLocalActions(POPUP, this::isValidPopup);
+				addGlobalActions(POPUP, this::isValidPopup);
+				addLocalActions(KEYBINDING_ONLY, this::isValidKeybindingOnly);
+				addGlobalActions(KEYBINDING_ONLY, this::isValidKeybindingOnly);
 				break;
 
 			case GLOBAL:
-				addLocalActions(LOCAL_TOOLBAR, a -> isValidToolbar(a));
-				addGlobalActions(GLOBAL_TOOLBAR, a -> isValidToolbar(a));
-				addLocalActions(LOCAL_MENU, a -> isValidMenu(a));
-				addGlobalActions(GLOBAL_MENU, a -> isValidMenu(a));
-				addLocalActions(POPUP, a -> isValidPopup(a));
-				addGlobalActions(POPUP, a -> isValidPopup(a));
-				addLocalActions(KEYBINDING_ONLY, a -> isValidKeybindingOnly(a));
-				addGlobalActions(KEYBINDING_ONLY, a -> isValidKeybindingOnly(a));
+				addLocalActions(LOCAL_TOOLBAR, this::isValidToolbar);
+				addGlobalActions(GLOBAL_TOOLBAR, this::isValidToolbar);
+				addLocalActions(LOCAL_MENU, this::isValidMenu);
+				addGlobalActions(GLOBAL_MENU, this::isValidMenu);
+				addLocalActions(POPUP, this::isValidPopup);
+				addGlobalActions(POPUP, this::isValidPopup);
+				addLocalActions(KEYBINDING_ONLY, this::isValidKeybindingOnly);
+				addGlobalActions(KEYBINDING_ONLY, this::isValidKeybindingOnly);
 				break;
 
 			case ALL:
-				addLocalActions(LOCAL_TOOLBAR, a -> isToolbar(a));
-				addGlobalActions(GLOBAL_TOOLBAR, a -> isToolbar(a));
-				addLocalActions(LOCAL_MENU, a -> isMenu(a));
-				addGlobalActions(GLOBAL_MENU, a -> isMenu(a));
-				addLocalActions(POPUP, a -> isPopup(a));
-				addGlobalActions(POPUP, a -> isPopup(a));
-				addLocalActions(KEYBINDING_ONLY, a -> isKeybindingOnly(a));
-				addGlobalActions(KEYBINDING_ONLY, a -> isKeybindingOnly(a));
+				addLocalActions(LOCAL_TOOLBAR, this::isToolbar);
+				addGlobalActions(GLOBAL_TOOLBAR, this::isToolbar);
+				addLocalActions(LOCAL_MENU, this::isMenu);
+				addGlobalActions(GLOBAL_MENU, this::isMenu);
+				addLocalActions(POPUP, this::isPopup);
+				addGlobalActions(POPUP, this::isPopup);
+				addLocalActions(KEYBINDING_ONLY, this::isKeybindingOnly);
+				addGlobalActions(KEYBINDING_ONLY, this::isKeybindingOnly);
 				break;
 		}
 	}
@@ -162,18 +218,18 @@ public class ActionsModel extends DefaultSearchListModel<DockingActionIf> {
 	}
 
 	private void addLocalActions(ActionGroup actionGroup, Predicate<DockingActionIf> filter) {
-		List<DockingActionIf> actions =
-			localActions.stream().filter(filter).collect(Collectors.toCollection(ArrayList::new));
-
-		actions.sort(getSorter(actionGroup));
+		List<DockingActionIf> actions = localActions.stream()
+				.filter(filter)
+				.sorted(getSorter(actionGroup))
+				.collect(Collectors.toCollection(ArrayList::new));
 		add(actionGroup.getDisplayName(), actions);
 	}
 
 	private void addGlobalActions(ActionGroup actionGroup, Predicate<DockingActionIf> filter) {
-		List<DockingActionIf> actions =
-			globalActions.stream().filter(filter).collect(Collectors.toCollection(ArrayList::new));
-
-		actions.sort(getSorter(actionGroup));
+		List<DockingActionIf> actions = globalActions.stream()
+				.filter(filter)
+				.sorted(getSorter(actionGroup))
+				.collect(Collectors.toCollection(ArrayList::new));
 		add(actionGroup.getDisplayName(), actions);
 	}
 
@@ -185,28 +241,21 @@ public class ActionsModel extends DefaultSearchListModel<DockingActionIf> {
 	 * @return the comparator to use for sorting actions within their category
 	 */
 	private Comparator<? super DockingActionIf> getSorter(ActionGroup actionGroup) {
-		switch (actionGroup) {
-			case GLOBAL_MENU:
-			case LOCAL_MENU:
-				return menuPathComparator;
-			case POPUP:
-				return popupPathComparator;
-			case GLOBAL_TOOLBAR:
-			case LOCAL_TOOLBAR:
-			case KEYBINDING_ONLY:
-			default:
-				return nameComparator;
-		}
+		return switch (actionGroup) {
+			case GLOBAL_MENU, LOCAL_MENU -> menuPathComparator;
+			case POPUP -> popupPathComparator;
+			default -> nameComparator;
+		};
 	}
 
-	private class ActionNameComparator implements Comparator<DockingActionIf> {
+	private static class ActionNameComparator implements Comparator<DockingActionIf> {
 		@Override
 		public int compare(DockingActionIf a1, DockingActionIf a2) {
 			return a1.getName().compareTo(a2.getName());
 		}
 	}
 
-	private class ActionMenuPathComparator implements Comparator<DockingActionIf> {
+	private static class ActionMenuPathComparator implements Comparator<DockingActionIf> {
 		@Override
 		public int compare(DockingActionIf a1, DockingActionIf a2) {
 			MenuData menuData1 = a1.getMenuBarData();
@@ -218,7 +267,7 @@ public class ActionsModel extends DefaultSearchListModel<DockingActionIf> {
 		}
 	}
 
-	private class ActionPopupPathComparator implements Comparator<DockingActionIf> {
+	private static class ActionPopupPathComparator implements Comparator<DockingActionIf> {
 		@Override
 		public int compare(DockingActionIf a1, DockingActionIf a2) {
 			MenuData menuData1 = a1.getPopupMenuData();
