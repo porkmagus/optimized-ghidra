@@ -29,6 +29,7 @@ import edu.uci.ics.jung.visualization.renderers.BasicVertexRenderer;
 import edu.uci.ics.jung.visualization.transform.MutableTransformer;
 import edu.uci.ics.jung.visualization.transform.MutableTransformerDecorator;
 import edu.uci.ics.jung.visualization.transform.shape.GraphicsDecorator;
+import docking.DockingChrome;
 import generic.theme.GColor;
 import ghidra.graph.viewer.VisualEdge;
 import ghidra.graph.viewer.VisualVertex;
@@ -129,15 +130,16 @@ public class AbstractVisualVertexRenderer<V extends VisualVertex, E extends Visu
 		// scale the offset with the scale of the view, but not as fast, so that as we scale down, 
 		// the size of the paint area starts to get larger than the vertex
 		offset = (int) adjustValueForCurrentScale(rc, offset, .9);
-		g.fillOval(bounds.x - offset, bounds.y - offset, bounds.width + (offset * 2),
-			bounds.height + (offset * 2));
-
-// DEBUG		
-//		g.setPaint(Palette.BLUE);
-//		g.drawRect(bounds.x - offset, bounds.y - offset, bounds.width + (offset * 2),
-//			bounds.height + (offset * 2));
-//		g.setPaint(Palette.BLACK);
-//		g.drawRect(bounds.x, bounds.y, bounds.width, bounds.height);
+		if (DockingChrome.isModern()) {
+			g.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_ON);
+			int arc = offset * 2;
+			g.fillRoundRect(bounds.x - offset, bounds.y - offset, bounds.width + (offset * 2),
+				bounds.height + (offset * 2), arc, arc);
+		}
+		else {
+			g.fillOval(bounds.x - offset, bounds.y - offset, bounds.width + (offset * 2),
+				bounds.height + (offset * 2));
+		}
 
 		g.setPaint(oldPaint);
 	}
@@ -191,19 +193,7 @@ public class AbstractVisualVertexRenderer<V extends VisualVertex, E extends Visu
 	 */
 	protected Shape getCompactShape(RenderContext<V, E> rc, Layout<V, E> layout, V vertex) {
 
-		Function<? super V, Shape> vertexShaper = rc.getVertexShapeTransformer();
-		Shape shape = null;
-		if (vertexShaper instanceof VisualGraphVertexShapeTransformer) {
-			@SuppressWarnings("unchecked")
-			VisualGraphVertexShapeTransformer<V> vgShaper =
-				(VisualGraphVertexShapeTransformer<V>) vertexShaper;
-
-			// use the viewable shape here, as it is visually pleasing
-			shape = vgShaper.transformToCompactShape(vertex);
-		}
-		else {
-			shape = vertexShaper.apply(vertex);
-		}
+		Shape shape = VertexShapes.getVertexShape(rc.getVertexShapeTransformer(), vertex, false);
 
 		return transformFromLayoutToView(rc, layout, vertex, shape);
 	}
@@ -218,19 +208,7 @@ public class AbstractVisualVertexRenderer<V extends VisualVertex, E extends Visu
 	 * @see VertexShapeProvider#getFullShape()
 	 */
 	public Shape getFullShape(RenderContext<V, E> rc, Layout<V, E> layout, V vertex) {
-		Function<? super V, Shape> vertexShaper = rc.getVertexShapeTransformer();
-		Shape shape = null;
-		if (vertexShaper instanceof VisualGraphVertexShapeTransformer) {
-			@SuppressWarnings("unchecked")
-			VisualGraphVertexShapeTransformer<V> vgShaper =
-				(VisualGraphVertexShapeTransformer<V>) vertexShaper;
-
-			// use the viewable shape here, as it is visually pleasing
-			shape = vgShaper.transformToFullShape(vertex);
-		}
-		else {
-			shape = vertexShaper.apply(vertex);
-		}
+		Shape shape = VertexShapes.getVertexShape(rc.getVertexShapeTransformer(), vertex, true);
 
 		return transformFromLayoutToView(rc, layout, vertex, shape);
 	}
@@ -246,17 +224,7 @@ public class AbstractVisualVertexRenderer<V extends VisualVertex, E extends Visu
 	 */
 	protected Shape transformFromLayoutToView(RenderContext<V, E> rc, Layout<V, E> layout, V vertex,
 			Shape shape) {
-
-		Point2D p = layout.apply(vertex);
-		MultiLayerTransformer multiLayerTransformer = rc.getMultiLayerTransformer();
-		p = multiLayerTransformer.transform(Layer.LAYOUT, p);
-		float x = (float) p.getX();
-		float y = (float) p.getY();
-
-		// create a transform that translates to the location of
-		// the vertex to be rendered
-		AffineTransform xform = AffineTransform.getTranslateInstance(x, y);
-		return xform.createTransformedShape(shape);
+		return VertexShapes.transformFromLayoutToView(rc, layout, vertex, shape);
 	}
 
 	/**

@@ -26,6 +26,7 @@ import edu.uci.ics.jung.graph.Graph;
 import edu.uci.ics.jung.graph.util.Context;
 import edu.uci.ics.jung.visualization.RenderContext;
 import edu.uci.ics.jung.visualization.transform.shape.GraphicsDecorator;
+import docking.DockingChrome;
 import generic.theme.GThemeDefaults.Colors;
 import ghidra.graph.VisualGraph;
 import ghidra.graph.viewer.VisualEdge;
@@ -64,7 +65,7 @@ public class VisualVertexRenderer<V extends VisualVertex, E extends VisualEdge<V
 		Graph<V, E> graph = layout.getGraph();
 		if (!rc.getVertexIncludePredicate()
 				.apply(
-					Context.<Graph<V, E>, V> getInstance(graph, vertex))) {
+					Context.getInstance(graph, vertex))) {
 			return;
 		}
 
@@ -107,14 +108,6 @@ public class VisualVertexRenderer<V extends VisualVertex, E extends VisualEdge<V
 		Rectangle bounds = fullShape.getBounds();
 		paintVertex(rc, g, vertex, bounds, layout);
 
-// DEBUG		
-//		Paint oldPaint = g.getPaint();
-//		g.setPaint(Palette.RED);
-//		g.draw(compactShape);
-//
-//		g.setPaint(Palette.CYAN);
-//		g.draw(fullShape);
-//		g.setPaint(oldPaint);
 	}
 
 	protected void paintVertex(RenderContext<V, E> rc, GraphicsDecorator g, V vertex,
@@ -149,6 +142,19 @@ public class VisualVertexRenderer<V extends VisualVertex, E extends VisualEdge<V
 		}
 
 		Paint oldPaint = g.getPaint();
+		if (DockingChrome.isModern()) {
+			g.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_ON);
+			Rectangle b = shape.getBounds();
+			int arc = Math.max(2, Math.min(b.width, b.height) / 6);
+			Shape rounded = new java.awt.geom.RoundRectangle2D.Double(b.x, b.y, b.width, b.height,
+				arc, arc);
+			g.setPaint(fillPaint);
+			g.fill(rounded);
+			g.setColor(DockingChrome.frameColor());
+			g.draw(rounded);
+			g.setPaint(oldPaint);
+			return;
+		}
 		g.setPaint(fillPaint);
 		g.fill(shape);
 
