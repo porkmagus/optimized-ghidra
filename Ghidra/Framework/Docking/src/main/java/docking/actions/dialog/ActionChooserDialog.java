@@ -430,17 +430,29 @@ public class ActionChooserDialog extends DialogComponentProvider {
 			if (name.contains(filterText)) {
 				return 3;
 			}
-			return getKeyBindingString(t).toLowerCase(Locale.ROOT).contains(filterText) ? 4 : 5;
+			return filterText.length() >= 2 &&
+				getKeyBindingString(t).toLowerCase(Locale.ROOT).contains(filterText) ? 4 : 5;
 		}
 
 		@Override
 		public boolean test(DockingActionIf t, String category) {
 			String name = getActionDisplayName(t, category).toLowerCase(Locale.ROOT);
+			if (name.contains(filterText)) {
+				return true;
+			}
+			// Shortcut text carries platform modifier names ("meta" on macOS, "shift",
+			// "alt"), so matching it on a single character makes every query such as "a"
+			// or "s" hit unrelated actions. Require a real query before matching keys.
 			String key = getKeyBindingString(t).toLowerCase(Locale.ROOT);
-			if (name.contains(filterText) || key.contains(filterText)) {
+			if (filterText.length() >= 2 && key.contains(filterText)) {
 				return true;
 			}
 			if (!DockingChrome.isModern()) {
+				return false;
+			}
+			// Owner/category matching is a convenience for narrowing a real query; on a
+			// single character it matches almost every action and makes the filter useless.
+			if (filterText.length() < 2) {
 				return false;
 			}
 			String searchable = name + " " + key + " " + t.getOwner().toLowerCase(Locale.ROOT) +
